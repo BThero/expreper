@@ -15,15 +15,26 @@ fn parse_i128(line: []u8) !i128 {
     return num;
 }
 
+const ParseError = error{
+    UnrecognizedOperator,
+};
+
 fn parse_expr(line: []u8) !i128 {
-    const maybe_plus_pos = std.mem.indexOf(u8, line, "+");
-    if (maybe_plus_pos == null) {
+    const maybe_op_pos = std.mem.lastIndexOfAny(u8, line, "+-");
+    if (maybe_op_pos == null) {
         return parse_i128(line);
     }
-    const plus_pos = maybe_plus_pos.?;
-    const lhs = try parse_expr(line[0..plus_pos]);
-    const rhs = try parse_expr(line[plus_pos + 1 .. line.len]);
-    return try std.math.add(i128, lhs, rhs);
+    const op_pos = maybe_op_pos.?;
+    const lhs = try parse_expr(line[0..op_pos]);
+    const rhs = try parse_expr(line[op_pos + 1 .. line.len]);
+    const op = line[op_pos];
+
+    const res = try switch (op) {
+        '+' => std.math.add(i128, lhs, rhs),
+        '-' => std.math.sub(i128, lhs, rhs),
+        else => ParseError.UnrecognizedOperator,
+    };
+    return res;
 }
 
 fn stdout_print(comptime fmt: []const u8, args: anytype) !void {
