@@ -42,15 +42,17 @@ const Operator = struct {
 };
 
 const Group = struct {
-    tokens: []*Token,
-    token_builder: std.array_list.Aligned(*Token, null),
+    tokens: std.array_list.Aligned(*Token, null),
     eval: ?IntType = null,
+    pub fn init(allocator: std.mem.Allocator) !Group {
+        return Group{ .tokens = try std.ArrayList(*Token).initCapacity(allocator, 0) };
+    }
     pub fn print(self: Group) void {
-        std.log.info("group({}) -- enter", .{self.tokens.len});
-        for (self.tokens) |token| {
+        std.log.info("group({}) -- enter", .{self.tokens.items.len});
+        for (self.tokens.items) |token| {
             token.print();
         }
-        std.log.info("group({}) -- exit", .{self.tokens.len});
+        std.log.info("group({}) -- exit", .{self.tokens.items.len});
     }
 };
 
@@ -74,17 +76,36 @@ const Token = union(TokenTag) {
     }
 };
 
+fn extract_num(allocator: std.mem.Allocator, num: *?i128) !?*Token {
+    if (num.* == null) {
+        return null;
+    }
+
+    const integer_literal = try allocator.create(IntegerLiteral);
+    integer_literal.* = IntegerLiteral.init(num.*.?);
+
+    const token = try allocator.create(Token);
+    token.* = Token{ .integer_literal = integer_literal };
+
+    num.* = null;
+    return token;
+}
+
 pub fn tokenize(expr: []const u8) !*Token {
     const allocator = std.heap.page_allocator;
     const root_group = try allocator.create(Group);
-    root_group.token_builder = try std.ArrayList(*Token).initCapacity(allocator, 0);
+    root_group.* = try Group.init(allocator);
 
     const root = try allocator.create(Token);
     root.* = Token{ .group = root_group };
 
     var num: ?i128 = null;
 
+    var groupStack = try std.ArrayList(*Token).initCapacity(allocator, 0);
+    try groupStack.append(allocator, root);
+
     for (expr) |ch| {
+        const lastGroup = groupStack.items[groupStack.items.len - 1];
         if (utils.is_one_of(DIGITS, ch)) {
             if (num == null) {
                 num = ch - '0';
@@ -95,15 +116,8 @@ pub fn tokenize(expr: []const u8) !*Token {
             continue;
         }
         if (utils.is_one_of(ALL_OP, ch)) {
-            if (num != null) {
-                const integer_literal = try allocator.create(IntegerLiteral);
-                integer_literal.* = IntegerLiteral.init(num.?);
-
-                const token = try allocator.create(Token);
-                token.* = Token{ .integer_literal = integer_literal };
-
-                try root.group.token_builder.append(allocator, token);
-                num = null;
+            if (try extract_num(allocator, &num)) |token| {
+                try lastGroup.group.tokens.append(allocator, token);
             }
 
             const operator_kind = try switch (ch) {
@@ -118,21 +132,41 @@ pub fn tokenize(expr: []const u8) !*Token {
             const token = try allocator.create(Token);
             token.* = Token{ .operator = operator };
 
-            try root.group.token_builder.append(allocator, token);
+            try lastGroup.group.tokens.append(allocator, token);
+            continue;
         }
+        if (ch == '(') {
+            const group = try allocator.create(Group);
+            group.* = try Group.init(allocator);
+
+            const token = try allocator.create(Token);
+            token.* = Token{ .group = group };
+
+            try lastGroup.group.tokens.append(allocator, token);
+            try groupStack.append(allocator, token);
+            continue;
+        }
+        if (ch == ')') {
+            if (try extract_num(allocator, &num)) |token| {
+                try lastGroup.group.tokens.append(allocator, token);
+            }
+
+            _ = groupStack.pop();
+            if (groupStack.items.len == 0) {
+                return error.todo;
+            }
+            continue;
+        }
+        return error.todo;
     }
 
-    if (num != null) {
-        const integer_literal = try allocator.create(IntegerLiteral);
-        integer_literal.* = IntegerLiteral.init(num.?);
-
-        const token = try allocator.create(Token);
-        token.* = Token{ .integer_literal = integer_literal };
-
-        try root.group.token_builder.append(allocator, token);
-        num = null;
+    if (groupStack.items.len != 1) {
+        return error.todo;
     }
 
-    root.group.tokens = root.group.token_builder.items;
+    if (try extract_num(allocator, &num)) |token| {
+        try root.group.tokens.append(allocator, token);
+    }
+
     return root;
 }
