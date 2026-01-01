@@ -6,17 +6,17 @@ const FIRST_ORDER_OP = "+-";
 const SECOND_ORDER_OP = "*";
 const ALL_OP = FIRST_ORDER_OP ++ SECOND_ORDER_OP;
 
-const TokenTag = enum {
+pub const TokenTag = enum {
     integer_literal,
     operator,
     group,
 };
 
-const IntType = i128;
+pub const IntType = i128;
 
-const OperatorKind = enum { add, sub, mul };
+pub const OperatorKind = enum { add, sub, mul };
 
-const IntegerLiteral = struct {
+pub const IntegerLiteral = struct {
     value: IntType,
     pub fn init(value: IntType) IntegerLiteral {
         return IntegerLiteral{ .value = value };
@@ -26,7 +26,7 @@ const IntegerLiteral = struct {
     }
 };
 
-const Operator = struct {
+pub const Operator = struct {
     kind: OperatorKind,
     pub fn init(kind: OperatorKind) Operator {
         return Operator{ .kind = kind };
@@ -41,9 +41,8 @@ const Operator = struct {
     }
 };
 
-const Group = struct {
+pub const Group = struct {
     tokens: std.array_list.Aligned(*Token, null),
-    eval: ?IntType = null,
     pub fn init(allocator: std.mem.Allocator) !Group {
         return Group{ .tokens = try std.ArrayList(*Token).initCapacity(allocator, 0) };
     }
@@ -56,7 +55,7 @@ const Group = struct {
     }
 };
 
-const Token = union(TokenTag) {
+pub const Token = union(TokenTag) {
     integer_literal: *IntegerLiteral,
     operator: *Operator,
     group: *Group,

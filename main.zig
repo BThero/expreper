@@ -1,5 +1,6 @@
 const std = @import("std");
 const tokenizer = @import("./tokenizer.zig");
+const evaluator = @import("./evaluator.zig");
 
 const usage =
     \\Usage: ./expreper [options] [expr]
@@ -37,10 +38,9 @@ fn compute(lhs: i128, rhs: i128, op: u8) !i128 {
 }
 
 fn parse_expr(expr: []u8) !i128 {
-    // first, tokenize it
     const token = try tokenizer.tokenize(expr);
-    token.print();
-    return ParseError.UnrecognizedOperator;
+    const result = try evaluator.evaluate(token.group);
+    return result;
 }
 
 pub fn main() !void {
