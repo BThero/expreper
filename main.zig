@@ -8,33 +8,11 @@ const usage =
     \\Options:
     \\ -h, --help: Show this usage information
     \\Expr:
-    \\ A simple mathematical expression which consists of integer numbers and '+', '-', '*' operators.
-    \\ Positive integers cannot have a '+' sign in front of them. 
-    \\ Negative integers have to be surrounded by round braces, e.g. (-5)*(-3).
-    \\ Round braces are not supported in all other cases. 
-    \\ Good Examples: "2", "(-3)", "1+2-4", "13*37-45*15*2" "7*6-3*4*9+12-6".
-    \\ Bad Examples: "3*(4+5)", "+2", "-3". 
+    \\ A simple mathematical expression which consists of integers and '+', '-', '*' operators.
 ;
-
-const DIGITS = "0123456789";
-const FIRST_ORDER_OP = "+-";
-const SECOND_ORDER_OP = "*";
 
 fn parse_i128(expr: []u8) !i128 {
     return try std.fmt.parseInt(i128, expr, 10);
-}
-
-const ParseError = error{
-    UnrecognizedOperator,
-};
-
-fn compute(lhs: i128, rhs: i128, op: u8) !i128 {
-    return switch (op) {
-        '+' => std.math.add(i128, lhs, rhs),
-        '-' => std.math.sub(i128, lhs, rhs),
-        '*' => std.math.mul(i128, lhs, rhs),
-        else => ParseError.UnrecognizedOperator,
-    };
 }
 
 fn parse_expr(expr: []u8) !i128 {
