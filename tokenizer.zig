@@ -5,14 +5,17 @@ const DIGITS = "0123456789";
 const FIRST_ORDER_OP = "+-";
 const SECOND_ORDER_OP = "*";
 const ALL_OP = FIRST_ORDER_OP ++ SECOND_ORDER_OP;
+const DIGITS_AND_DOT = DIGITS ++ ".";
 
 pub const TokenTag = enum {
     integer_literal,
+    decimal_literal,
     operator,
     group,
 };
 
 pub const IntType = i128;
+pub const DecimalType = f128;
 
 pub const OperatorKind = enum { add, sub, mul };
 
@@ -23,6 +26,16 @@ pub const IntegerLiteral = struct {
     }
     pub fn print(self: IntegerLiteral) void {
         std.log.info("integer_literal({})", .{self.value});
+    }
+};
+
+pub const DecimalLiteral = struct {
+    value: DecimalType,
+    pub fn init(value: DecimalType) DecimalLiteral {
+        return DecimalLiteral{ .value = value };
+    }
+    pub fn print(self: DecimalLiteral) void {
+        std.log.info("decimal_literal({})", .{self.value});
     }
 };
 
@@ -57,6 +70,7 @@ pub const Group = struct {
 
 pub const Token = union(TokenTag) {
     integer_literal: *IntegerLiteral,
+    decimal_literal: *DecimalLiteral,
     operator: *Operator,
     group: *Group,
 
@@ -64,6 +78,9 @@ pub const Token = union(TokenTag) {
         switch (self) {
             .integer_literal => {
                 self.integer_literal.print();
+            },
+            .decimal_literal => {
+                self.decimal_literal.print();
             },
             .operator => {
                 self.operator.print();
@@ -75,19 +92,87 @@ pub const Token = union(TokenTag) {
     }
 };
 
-fn extract_num(allocator: std.mem.Allocator, num: *?i128) !?*Token {
-    if (num.* == null) {
-        return null;
+const NumStage = enum { empty, int, dot, decimal };
+
+const Num = struct {
+    stage: NumStage,
+    int: IntType,
+    decimal: IntType,
+    decimal_len: usize,
+    pub fn init() Num {
+        return Num{ .stage = NumStage.empty, .int = undefined, .decimal = undefined, .decimal_len = undefined };
     }
+    pub fn append_char(self: Num, ch: u8) !Num {
+        if (ch == '.') {
+            if (self.stage != NumStage.int) {
+                return error.todo;
+            }
+            return Num{ .stage = NumStage.dot, .int = self.int, .decimal = undefined, .decimal_len = undefined };
+        }
+        if (ch < '0' or ch > '9') {
+            return error.todo;
+        }
+        const digit: IntType = ch - '0';
+        return try switch (self.stage) {
+            NumStage.empty => {
+                return Num{ .stage = NumStage.int, .int = digit, .decimal = undefined, .decimal_len = undefined };
+            },
+            NumStage.int => {
+                if (self.int == 0) {
+                    return error.todo; // leading zero case
+                }
+                var new_int = try std.math.mul(IntType, self.int, 10);
+                new_int = try std.math.add(IntType, new_int, digit);
+                return Num{ .stage = NumStage.int, .int = new_int, .decimal = undefined, .decimal_len = undefined };
+            },
+            NumStage.dot => {
+                return Num{ .stage = NumStage.decimal, .int = self.int, .decimal = digit, .decimal_len = 1 };
+            },
+            NumStage.decimal => {
+                // no need to handle leading zero case, since 12.00 is OK
+                var new_decimal = try std.math.mul(IntType, self.decimal, 10);
+                new_decimal = try std.math.add(IntType, new_decimal, digit);
+                return Num{ .stage = NumStage.decimal, .int = self.int, .decimal = new_decimal, .decimal_len = self.decimal_len + 1 };
+            },
+        };
+    }
+};
 
-    const integer_literal = try allocator.create(IntegerLiteral);
-    integer_literal.* = IntegerLiteral.init(num.*.?);
+fn extract_num(allocator: std.mem.Allocator, num: *Num) !?*Token {
+    return try switch (num.stage) {
+        NumStage.empty => {
+            return null;
+        },
+        NumStage.int, NumStage.dot => {
+            // We can treat "12." as 12
+            const integer_literal = try allocator.create(IntegerLiteral);
+            integer_literal.* = IntegerLiteral.init(num.int);
+            num.* = Num.init();
 
-    const token = try allocator.create(Token);
-    token.* = Token{ .integer_literal = integer_literal };
+            const token = try allocator.create(Token);
+            token.* = Token{ .integer_literal = integer_literal };
+            return token;
+        },
+        NumStage.decimal => {
+            const value = @as(DecimalType, @floatFromInt(num.int)) +
+                @as(DecimalType, @floatFromInt(num.decimal)) / try switch (num.decimal_len) {
+                    1 => @as(DecimalType, 10.0),
+                    2 => @as(DecimalType, 100.0),
+                    3 => @as(DecimalType, 1_000.0),
+                    4 => @as(DecimalType, 10_000.0),
+                    5 => @as(DecimalType, 100_000.0),
+                    6 => @as(DecimalType, 1_000_000.0),
+                    else => error.todo, // too many digits after the dot
+                };
+            const decimal_literal = try allocator.create(DecimalLiteral);
+            decimal_literal.* = DecimalLiteral.init(value);
+            num.* = Num.init();
 
-    num.* = null;
-    return token;
+            const token = try allocator.create(Token);
+            token.* = Token{ .decimal_literal = decimal_literal };
+            return token;
+        },
+    };
 }
 
 pub fn tokenize(expr: []const u8) !*Token {
@@ -98,20 +183,15 @@ pub fn tokenize(expr: []const u8) !*Token {
     const root = try allocator.create(Token);
     root.* = Token{ .group = root_group };
 
-    var num: ?i128 = null;
+    var num = Num.init();
 
     var groupStack = try std.ArrayList(*Token).initCapacity(allocator, 0);
     try groupStack.append(allocator, root);
 
     for (expr) |ch| {
         const lastGroup = groupStack.items[groupStack.items.len - 1];
-        if (utils.is_one_of(DIGITS, ch)) {
-            if (num == null) {
-                num = ch - '0';
-            } else {
-                num = try std.math.mul(i128, num.?, 10);
-                num = try std.math.add(i128, num.?, ch - '0');
-            }
+        if (utils.is_one_of(DIGITS_AND_DOT, ch)) {
+            num = try num.append_char(ch);
             continue;
         }
         if (utils.is_one_of(ALL_OP, ch)) {
