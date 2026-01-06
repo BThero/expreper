@@ -11,10 +11,6 @@ const usage =
     \\ A simple mathematical expression which consists of integers and '+', '-', '*' operators.
 ;
 
-fn parse_i128(expr: []u8) !i128 {
-    return try std.fmt.parseInt(i128, expr, 10);
-}
-
 fn parse_expr(expr: []u8) !i128 {
     const token = try tokenizer.tokenize(expr);
     const result = try evaluator.evaluate(token.group);
