@@ -8,10 +8,12 @@ const usage =
     \\Options:
     \\ -h, --help: Show this usage information
     \\Expr:
-    \\ A simple mathematical expression which consists of integers and '+', '-', '*' operators.
+    \\ A simple mathematical expression which consists of integers, decimals and '+', '-', '*' operators.
+    \\
+    \\ Calculations are done in integers when possible. 
 ;
 
-fn parse_expr(expr: []u8) !i128 {
+fn parse_expr(expr: []u8) !evaluator.Result {
     const token = try tokenizer.tokenize(expr);
     const result = try evaluator.evaluate(token.group);
     return result;
@@ -30,8 +32,12 @@ pub fn main() !void {
                 return std.process.cleanExit();
             }
 
-            if (parse_expr(arg)) |num| {
-                std.log.info("Successfully parsed. Result: {}\n", .{num});
+            if (parse_expr(arg)) |result| {
+                if (result.is_integer()) {
+                    std.log.info("Successfully parsed. Result is an integer: {}\n", .{result.integer});
+                } else {
+                    std.log.info("Successfully parsed. Result is a decimal: {d:.6}\n", .{result.decimal});
+                }
                 return std.process.cleanExit();
             } else |_| {
                 std.log.err("Could not parse expression: '{s}'\n", .{arg});

@@ -1,9 +1,52 @@
 const std = @import("std");
 const tokenizer = @import("tokenizer.zig");
 
-pub fn evaluate(root: *tokenizer.Group) !i128 {
-    var prefix: i128 = 0;
-    var block: ?i128 = null;
+const ResultTag = enum {
+    integer,
+    decimal,
+};
+
+const IntType = tokenizer.IntType;
+const DecimalType = tokenizer.DecimalType;
+
+pub const Result = union(ResultTag) {
+    integer: IntType,
+    decimal: DecimalType,
+    pub fn is_integer(self: Result) bool {
+        return @as(ResultTag, self) == ResultTag.integer;
+    }
+    pub fn is_decimal(self: Result) bool {
+        return @as(ResultTag, self) == ResultTag.decimal;
+    }
+    pub fn op(self: Result, other: Result, kind: tokenizer.OperatorKind) !Result {
+        if (self.is_integer() and other.is_integer()) {
+            const result = try switch (kind) {
+                .add => std.math.add(IntType, self.integer, other.integer),
+                .sub => std.math.sub(IntType, self.integer, other.integer),
+                .mul => std.math.mul(IntType, self.integer, other.integer),
+            };
+            return Result{ .integer = result };
+        }
+        const dec_self = if (self.is_integer())
+            @as(DecimalType, @floatFromInt(self.integer))
+        else
+            self.decimal;
+        const dec_other = if (other.is_integer())
+            @as(DecimalType, @floatFromInt(other.integer))
+        else
+            other.decimal;
+        const result = switch (kind) {
+            .add => dec_self + dec_other,
+            .sub => dec_self - dec_other,
+            .mul => dec_self * dec_other,
+        };
+        return Result{ .decimal = result };
+    }
+};
+
+pub fn evaluate(root: *tokenizer.Group) !Result {
+    var prefix = Result{ .integer = 0 };
+    var block: ?Result = null;
     var block_op: ?tokenizer.OperatorKind = null;
 
     // [....]   (+/-)      (x1*x2*x3*x4)
@@ -18,15 +61,7 @@ pub fn evaluate(root: *tokenizer.Group) !i128 {
                         if (block_op == null) {
                             return error.todo;
                         }
-
-                        if (block_op.? == .add) {
-                            prefix = try std.math.add(i128, prefix, val);
-                        } else if (block_op.? == .sub) {
-                            prefix = try std.math.sub(i128, prefix, val);
-                        } else {
-                            return error.todo;
-                        }
-
+                        prefix = try prefix.op(val, block_op.?);
                         block = null;
                         block_op = null;
                     }
@@ -43,11 +78,15 @@ pub fn evaluate(root: *tokenizer.Group) !i128 {
                 },
             }
         } else {
-            var num: i128 = undefined;
+            var num: Result = undefined;
             if (tag == tokenizer.TokenTag.group) {
                 num = try evaluate(token.group);
+            } else if (tag == tokenizer.TokenTag.integer_literal) {
+                num = Result{ .integer = token.integer_literal.value };
+            } else if (tag == tokenizer.TokenTag.decimal_literal) {
+                num = Result{ .decimal = token.decimal_literal.value };
             } else {
-                num = token.integer_literal.value;
+                return error.todo;
             }
             if (block_op == null) {
                 block_op = .add;
@@ -55,7 +94,7 @@ pub fn evaluate(root: *tokenizer.Group) !i128 {
             if (block == null) {
                 block = num;
             } else {
-                block = try std.math.mul(i128, block.?, num);
+                block = try block.?.op(num, tokenizer.OperatorKind.mul);
             }
         }
     }
@@ -64,13 +103,9 @@ pub fn evaluate(root: *tokenizer.Group) !i128 {
         if (block_op == null) {
             return error.todo;
         }
-        if (block_op.? == .add) {
-            prefix = try std.math.add(i128, prefix, val);
-        } else if (block_op.? == .sub) {
-            prefix = try std.math.sub(i128, prefix, val);
-        } else {
-            return error.todo;
-        }
+        prefix = try prefix.op(val, block_op.?);
+        block = null;
+        block_op = null;
     }
 
     return prefix;
