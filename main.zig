@@ -8,7 +8,9 @@ const usage =
     \\Options:
     \\ -h, --help: Show this usage information
     \\Expr:
-    \\ A simple mathematical expression which consists of integers and '+', '-', '*' operators.
+    \\ A simple mathematical expression which consists of integers, decimals and '+', '-', '*' operators.
+    \\
+    \\ Calculations are done in integers when possible. 
 ;
 
 fn parse_expr(expr: []u8) !evaluator.Result {
