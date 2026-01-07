@@ -29,14 +29,17 @@ test "integer" {
     const nums = [_]i128{ 13, 2026, 948768574 };
     var buf: [100]u8 = undefined;
 
-    for (nums) |num| {
-        const expr = try std.fmt.bufPrint(&buf, "{}", .{num});
+    const formats: [2][]const u8 = .{ "{}", "{}." };
+    inline for (formats) |fmt| {
+        for (nums) |num| {
+            const expr = try std.fmt.bufPrint(&buf, fmt, .{num});
 
-        const root = try tokenizer.tokenize(expr);
-        const items = try expect_group(root);
+            const root = try tokenizer.tokenize(expr);
+            const items = try expect_group(root);
 
-        try std.testing.expectEqual(1, items.len);
-        try std.testing.expectEqual(num, try expect_int(items[0]));
+            try std.testing.expectEqual(1, items.len);
+            try std.testing.expectEqual(num, try expect_int(items[0]));
+        }
     }
 }
 
